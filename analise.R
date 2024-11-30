@@ -53,6 +53,9 @@ library(xtable)
 # Converter para LaTeX
 print(xtable(resultado.geral), type = "latex", file = "tabela.geral.tex")
 
+#Converter para excel
+library(writexl)
+write_xlsx(resultado.geral, "tabela2.xlsx")
 #######################################################################################################################################
 # Espessuras de tecido mole por grupo (sexo):
 #######################################################################################################################################
@@ -90,7 +93,9 @@ library(xtable)
 # Converter para LaTeX
 print(xtable(resultado.sexo), type = "latex", file = "tabela.sexo.tex")
 
-
+#Converter para excel
+library(writexl)
+write_xlsx(resultado.sexo, "tabela3.xlsx")
 
 #######################################################################################################################################
 # Espessuras por grupo (idade):
@@ -128,7 +133,9 @@ library(xtable)
 # Converter para LaTeX
 print(xtable(resultado.idade), type = "latex", file = "tabela.idade.tex")
 
-
+#Converter para excel
+library(writexl)
+write_xlsx(resultado.idade, "anexos.xlsx")
 #######################################################################################################################################
 # Espessuras por grupo (idade): 2 grupos
 #######################################################################################################################################
@@ -164,7 +171,9 @@ library(xtable)
 # Converter para LaTeX
 print(xtable(resultado.idade.grupo), type = "latex", file = "tabela.idade.grupo.tex")
 
-
+#Converter para excel
+library(writexl)
+write_xlsx(resultado.idade.grupo, "tabela4.xlsx")
 
 #######################################################################################################################################
 # Teste-t - Variável Sexo
@@ -558,11 +567,7 @@ write_xlsx(dft, "dif.xlsx")
 
 
 
-
-
-
-
-
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
 ### Comparação com Kuhnen
 library(dplyr)
 separado <- as.data.frame(kunen)
@@ -578,10 +583,11 @@ kunen.sexo$autor <- rep("Kuhnen", 38)
 kondo.sexo <- data.frame(resultado.sexo$Sexo, resultado.sexo$variavel, resultado.sexo$Média, resultado.sexo$Desvio.padrão, resultado.sexo$n)
 kondo.sexo <- kondo.sexo %>% rename(n = resultado.sexo.n, variavel = resultado.sexo.variavel)
 str(kondo.sexo)
+kondo.sexo <- kondo.sexo %>% rename(Sexo = resultado.sexo.Sexo, Media = resultado.sexo.Média, sd = resultado.sexo.Desvio.padrão)
 kondo.sexo$autor <- rep("Kondo", 70)
 
-
 kondo.sexo <- kondo.sexo[kondo.sexo$variavel %in% kunen.sexo$variavel, ]
+
 comparacao <- rbind(kondo.sexo, kunen.sexo)
 
 
