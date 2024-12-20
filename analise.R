@@ -45,7 +45,7 @@ resultado.geral <- medidas.resumo %>%
 resultado.geral <- as.data.frame(resultado.geral)
 str(resultado.geral)
 resultado.geral <- resultado.geral %>% mutate(across(where(is.numeric), ~ round(.x, 2)))
-
+str(resultado.geral)
 # Instalar e carregar o pacote xtable
 install.packages("xtable")
 library(xtable)
@@ -174,6 +174,34 @@ print(xtable(resultado.idade.grupo), type = "latex", file = "tabela.idade.grupo.
 #Converter para excel
 library(writexl)
 write_xlsx(resultado.idade.grupo, "tabela4.xlsx")
+
+#######################################################################################################################################
+# Espessuras por grupo (idade) x sexo
+#######################################################################################################################################
+medidas.sexo.grupo <- espessuras %>% dplyr::select(2:37, 39) %>% group_by(Grupo, Sexo) %>% summarise(across(everything(), list(n = ~ sum(!is.na(.x)),
+                                                                                                   Média = ~ mean(.x, na.rm = TRUE),
+                                                                                                   Variância = ~ var(.x, na.rm = TRUE),
+                                                                                                   Desvio.padrão = ~ sd(.x, na.rm = TRUE),
+                                                                                                   Mediana = ~ median(.x, na.rm = TRUE),
+                                                                                                   Mínimo = ~ ifelse(all(is.na(.x)), NA, min(.x, na.rm = TRUE)),  
+                                                                                                   Máximo = ~ ifelse(all(is.na(.x)), NA, max(.x, na.rm = TRUE)),
+                                                                                                   Coef.variação = ~ (sd(.x, na.rm = TRUE) / mean(.x, na.rm = TRUE)) * 100),
+  .names = "{.col}_{.fn}"  # Renomeia as colunas com o nome da função aplicada
+))
+
+resultado.sexo.grupo <- medidas.sexo.grupo %>% pivot_longer(cols = -c(Grupo, Sexo), names_to = c("variavel", "medida"),  # Separando o nome da coluna original e a métrica
+                                                              names_sep = "_",  # Separando pelo "_"
+                                                              values_to = "valor") %>% pivot_wider(names_from = medida,  
+                                                                                                   values_from = valor)  
+resultado.sexo.grupo
+resultado.sexo.grupo <- as.data.frame(resultado.sexo.grupo)
+resultado.sexo.grupo <- resultado.sexo.grupo %>% mutate(across(where(is.numeric), ~ round(.x, 2)))
+resultado.sexo.grupo
+
+#Converter para excel
+library(writexl)
+write_xlsx(resultado.sexo.grupo, "tabela11.xlsx")
+
 
 #######################################################################################################################################
 # Teste-t - Variável Sexo
@@ -659,4 +687,591 @@ diferenca.idade <- data.frame(kondo.idade$Media - teste$Media)
 dif.idade.autores <- data.frame(kondo.idade$variavel, kondo.idade$Idade, kondo.idade$Media, teste$Media, diferenca.idade)
 dif.idade.autores <- dif.idade.autores %>% rename(Idade = kondo.idade.Idade, Variavel = kondo.idade.variavel, Media.Kondo = kondo.idade.Media, Media.Kuhnen = teste.Media, Diferenca = kondo.idade.Media...teste.Media)
 dif.idade.autores <-  dif.idade.autores %>% arrange(Variavel)
+
+
+
+
+#######################################################################################################################################
+# ANOVA - Variável Sexo x Grupo
+#######################################################################################################################################
+#Descritiva - grafico média e sd
+comparacao2way <- resultado.sexo.grupo %>% select(Grupo, Sexo, variavel, Média, Desvio.padrão) %>% rename(media = Média, sd = Desvio.padrão)
+library(ggplot2)
+comparacao2way %>% ggplot(aes(variavel, media, fill= Sexo)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) + 
+  geom_errorbar(aes(ymin = media - sd, ymax = media + sd), position = position_dodge(width = 0.8), width = 0.25) +
+  labs(x = "Ponto craniométrico", y = "Espessura", fill= "Sexo", title = "Espessura média (em mm) e desvio-padrão para cada ponto craniométrico, por sexo e faixa etária") +
+  facet_wrap(~Grupo) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(size=0.2, colour="black"))
+
+
+
+#####################
+# Modelo 1 - Glabela
+#####################
+# ANOVA contexto da regressão
+#criando dataframe
+library(dplyr)
+library(tidyverse)
+dadosglabela <- espessuras %>% select(Glabela, Grupo, Sexo) %>% drop_na()
+
+#modelo
+modelo1 <- lm(Glabela ~ Grupo + Sexo + Grupo*Sexo, data = espessuras)
+fit <- anova(modelo1)
+fit
+summary(modelo1) #para achar coefs do modelo. 
+#Teste F testa:
+#H0: beta0=beta1=beta2=0
+#H1: peo menos1 é dif de zero
+#alfa 5%
+#Vemos que pelo menos 1 beta é diferente de zero. Verifica o teste t na tabela.
+
+
+# Diagnóstico do modelo 
+#qqplot - normalidade: teve dist normal
+dadosglabela$residuos <- residuals(modelo1)
+dadosglabela %>% ggplot(aes(sample = residuos)) + 
+  stat_qq(color = "blue") + 
+  stat_qq_line(color = "red") + 
+  labs(x = "residuos amostra", y = "teoricos") +
+  theme_bw()
+
+shapiro.test(x = dadosglabela$residuos)
+
+dadosglabela$res_padronizados <- dadosglabela$residuos/sqrt(fit$`Mean Sq`[4])
+dadosglabela %>% ggplot(aes(sample = res_padronizados)) + 
+  stat_qq(color = "blue") + 
+  stat_qq_line(color = "red") + 
+  labs(x = "residuos studentizados amostra", y = "teoricos")+
+  theme_bw()
+
+#residuos padronizados versus niveis fator Sexo : residuos aparentemente simetricos/variancia dos erros um pouco menor no masc
+dadosglabela %>% ggplot(aes(x = res_padronizados, y = Sexo, color = Sexo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Resíduos padronizados", y = "Sexo") +
+  theme_bw()
+
+#residuos padronizados versus niveis fator Grupo : residuos aparentemente simetricos/variancia dos erros um pouco menor no 7-14 anos
+dadosglabela %>% ggplot(aes(x = res_padronizados, y = Grupo, color = Grupo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Resíduos padronizados", y = "Sexo") +
+  theme_bw()
+
+#residuos padronizados versus niveis fator GrupoxSexo : 
+dadosglabela %>% ggplot(aes(x = res_padronizados, y = Grupo, color = Sexo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Resíduos padronizados", y = "Grupo") +
+  facet_wrap(~Sexo) +
+  theme_bw()
+
+
+#residuos versus fitted (preditos)
+dadosglabela$pred <- fitted(modelo1)
+dadosglabela %>% ggplot(aes(x = pred, y = residuos, color = Sexo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  facet_wrap(~Grupo) +
+  labs(x = "Valores preditos para Glabela", y = "Resíduos") +
+  theme_bw()
+
+# Homocedasticidade: Breusch-Pagan
+#H0:as variancias dos erros sao constantes (homocedastico)! Foi rejeitada a H0. Portanto, transformacao Box-Cox
+#H1:as variancias dos erros Nao sao constantes
+#alfa 5%
+library(car)
+ncvTest(modelo1)
+
+# Relacao linear entre resposta e preditores é significativa?
+summary(modelo1)$coef
+#Rejeitamos H0 somente para beta0 e beta1. Ou seja, os outros betas sao iguais a zero
+
+#Avaliando Falta de ajuste do modelo: tenho que ter replicacoes de preditores! Tenho varios do sexo fem no grupo 1, no grupo 2... mesmo para masculino
+#H0:o modelo é razoavel
+#H1:o modelo nao é razoavel
+#alfa 5%
+#library(EnvStats)
+#anovaPE(modelo1)
+
+# Transformação Box-Cox
+library(MASS)
+b1<-boxcox(modelo1)
+lambda1 <- b1$x[which.max(b1$y)]
+lambda1
+
+#Na internet:
+#((yi^lambda) - 1) / lambda) se lambda != 0
+#log_e(y) se lambda = 0
+
+# No livro:
+#((yi^lambda) - 1)*k1) se lambda != 0
+#(log_e(yi))*k2 se lambda = 0
+#k1= 1/(lambda*(k2)^(lambda-1))
+#k2=(produtorio yi)^1/n com i indo de 1 a n
+
+dadosglabela$Glabela.boxcox <- (((dadosglabela$Glabela)^lambda1)-1)/lambda1
+
+#Ajuste do novo modelo
+modelo1.2 <- lm(Glabela.boxcox ~ Grupo + Sexo + Grupo*Sexo, data = dadosglabela)
+anova(modelo1.2)
+anova(modelo1)
+summary(modelo1.2)
+summary(modelo1)
+fit1.2 <- anova(modelo1.2)
+#normalidade
+dadosglabela$residuos1.2 <- residuals(modelo1.2)
+dadosglabela %>% ggplot(aes(sample = residuos1.2)) + 
+  stat_qq(color = "blue") + 
+  stat_qq_line(color = "red") + 
+  labs(x = "residuos amostra", y = "teoricos") +
+  theme_bw()
+
+dadosglabela$res_padronizados1.2 <- dadosglabela$residuos1.2/sqrt(fit1.2$`Mean Sq`[4])
+dadosglabela$pred1.2 <- fitted(modelo1.2)
+
+dadosglabela %>% ggplot(aes(x = pred1.2, y = res_padronizados1.2, color = Sexo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  facet_wrap(~Grupo) +
+  labs(x = "Valores preditos para Glabela", y = "Resíduos") +
+  theme_bw()
+
+# Homocedasticidade: Breusch-Pagan
+#H0:as variancias dos erros sao constantes (homocedastico)! Foi rejeitada a H0. Portanto, transformacao Box-Cox
+#H1:as variancias dos erros Nao sao constantes
+#alfa 5%
+library(car)
+ncvTest(modelo1.2)
+
+#residuos padronizados versus niveis fator Sexo : residuos aparentemente simetricos/variancia dos erros um pouco menor no masc
+dadosglabela %>% ggplot(aes(x = res_padronizados1.2, y = Sexo, color = Sexo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Resíduos padronizados", y = "Sexo") +
+  theme_bw()
+
+#residuos padronizados versus niveis fator Grupo : residuos aparentemente simetricos/variancia dos erros um pouco menor no 7-14 anos
+dadosglabela %>% ggplot(aes(x = res_padronizados1.2, y = Grupo, color = Grupo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Resíduos padronizados", y = "Sexo") +
+  theme_bw()
+
+#residuos padronizados versus niveis fator GrupoxSexo : 
+dadosglabela %>% ggplot(aes(x = res_padronizados1.2, y = Grupo, color = Sexo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Resíduos padronizados", y = "Grupo") +
+  facet_wrap(~Sexo) +
+  theme_bw()
+
+#Intervalo de confiança para a média:
+xnew1.2 <- tibble(Grupo = c("7 a 11 anos", "7 a 11 anos", "12 a 18 anos", "12 a 18 anos"), Sexo = c("Feminino", "Masculino", "Feminino", "Masculino"))
+xnew1.2
+predict(modelo1, xnew1.2, interval = "confidence", level = 0.95)
+
+
+#####################
+# Modelo 2 - Nasio
+#####################
+
+
+
+#####################
+# Modelo 3 - Rinio
+#####################
+
+
+#####################
+# Modelo 4 - Filtro.medio
+#####################
+
+
+
+#####################
+# Modelo 5 - Prostio
+#####################
+
+
+
+#####################
+# Modelo 6 - Infradental
+#####################
+
+
+
+
+#####################
+# Modelo 7 - Supramental
+#####################
+
+
+#####################
+# Modelo 8 - Pogonio
+#####################
+
+
+#####################
+# Modelo 9 - Mento
+#####################
+
+
+#####################
+# Modelo 10 - Mid.Supraorbital.E
+#####################
+
+
+#####################
+# Modelo 11 - Mid.Infraorbital.E
+#####################
+
+
+
+#####################
+# Modelo 12 - Malar.E
+#####################
+
+
+#####################
+# Modelo 13 - Lateral.orbita.E
+#####################
+
+
+
+#####################
+# Modelo 14 - Zigio.E
+#####################
+
+
+
+#####################
+# Modelo 15 - Supraglenoide.E
+#####################
+
+
+#####################
+# Modelo 16 - Ectomolare1s.E
+#####################
+
+
+#####################
+# Modelo 17 - Ectomolare2s.E
+#####################
+
+
+#####################
+# Modelo 18 - Ectomolare1i.E
+#####################
+
+
+#####################
+# Modelo 19 - Ectomolare2i.E
+#####################
+
+
+#####################
+# Modelo 20 - Gonio.E
+#####################
+
+#####################
+# Modelo 21 - Linha.oclusal.E
+#####################
+
+#####################
+# Modelo 22 - Mid.ramus.E
+#####################
+
+
+
+#####################
+# Modelo 23 - Gonio.D
+#####################
+
+#####################
+# Modelo 24 - Linha.oclusal.D
+#####################
+
+#####################
+# Modelo 25 - Mid.ramus.D
+#####################
+
+
+#####################
+# Modelo 26 - Lateral.orbita.D
+#####################
+
+
+
+#####################
+# Modelo 27 - Zigio.D
+#####################
+
+
+
+#####################
+# Modelo 28 - Supraglenoide.D
+#####################
+
+
+
+#####################
+# Modelo 29 - Ectomolare1s.D
+#####################
+
+
+#####################
+# Modelo 30 - Ectomolare2s.D
+#####################
+
+
+#####################
+# Modelo 31 - Ectomolare1i.D
+#####################
+
+
+#####################
+# Modelo 32 - Ectomolare2i.D
+#####################
+
+
+#####################
+# Modelo 33 - Mid.Supraorbital.D
+#####################
+
+
+#####################
+# Modelo 34 - Mid.Infraorbital.D
+#####################
+
+
+#####################
+# Modelo 35 - Malar.D
+#####################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Anova tradicional
+ok <- aov(Glabela ~ Grupo + Sexo + Grupo:Sexo, data = espessuras)
+summary(ok)
+# 1. homogeneidade
+plot(ok, 1)
+library(car)
+leveneTest(Glabela ~ Grupo*Sexo, data = espessuras)
+# 2. Normality
+plot(ok, 2)
+# 3. Extract the residuals
+aov_residuals <- residuals(object = ok)
+aov_residuals
+# Run Shapiro-Wilk test
+shapiro.test(x = aov_residuals)
+## Unbalanced cases ***
+library(car)
+my_anova <- aov(Glabela ~ Grupo*Sexo, data = espessuras)
+Anova(my_anova, type = "III")
+summary(my_anova)
+
+
+
+
+
+
+
+
+
+
+
+# ANOVA contexto da regressão
+modelo1 <- lm(Glabela ~ Grupo + Sexo + Grupo*Sexo, data = espessuras)
+fit <- anova(modelo1)
+fit
+summary(modelo1) #para achar coef do modelo
+
+# Diagnóstico do modelo
+#qqplot - normalidade
+dadosglabela <- espessuras %>% select(Glabela, Grupo, Sexo) %>% drop_na()
+dadosglabela$residuo <- residuals(modelo1)
+dadosglabela %>% ggplot(aes(sample = residuo)) + 
+  stat_qq(color = "blue") + 
+  stat_qq_line(color = "red") + 
+  theme_bw()
+
+shapiro.test(x = dadosglabela$residuo)
+
+dadosglabela$res_padronizados <- dadosglabela$residuo/sqrt(fit$`Mean Sq`[4])
+dadosglabela %>% ggplot(aes(sample = res_padronizados)) + 
+  stat_qq(color = "blue") + 
+  stat_qq_line(color = "red") + 
+  theme_bw()
+
+#residuos padronizados versus niveis fator A
+dadosglabela %>% ggplot(aes(x = Sexo, y = res_padronizados, color = Sexo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Sexo", y = "Resíduos padronizados") +
+  theme_bw()
+
+#residuos padronizados versus niveis fator B
+dadosglabela %>% ggplot(aes(x = Grupo, y = res_padronizados, color = Grupo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Grupo", y = "Resíduos padronizados") +
+  theme_bw()
+
+#residuos versus fitted
+dadosglabela$pred <- fitted(modelo1)
+dadosglabela %>% ggplot(aes(x = pred, y = residuo, color = Sexo)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  facet_wrap(~Grupo) +
+  labs(x = "Glabela", y = "Resíduos") +
+  theme_bw()
+
+
+# Homocedasticidade: Breusch-Pagan
+#H0:as variancias dos erros sao constantes (homocedastico)
+library(car)
+ncvTest(modelo1)
+
+# Transformação Box-Cox
+library(MASS)
+b <- boxcox(modelo1)
+b
+lambda <- b$x[which.max(b$y)]
+lambda
+
+#((y^lambda) - 1) / lambda) se lambda != 0
+#log_e(y) se lambda = 0
+
+
+
+
+
+#Novo modelo ajustado
+dadosglabela$Glabela.boxcox <- dadosglabela$Glabela^lambda 
+modelo2<-lm(Glabela.boxcox ~ Grupo + Sexo + Grupo*Sexo, data = dadosglabela)
+anova(modelo2)
+summary(modelo2)
+
+#Normalidade
+residuo2 <- residuals(modelo2)
+shapiro.test(x = residuo2)
+#Homocedast
+library(car)
+ncvTest(modelo2)
+
+#Intervalo confianca dos estimadores betas
+confint(modelo1)
+library(broom)
+library(knitr)
+modelo1 %>% tidy(conf.int = TRUE) %>% kable(booktabs = TRUE)
+
+#Intervalo confianca para a resposta média, considerando os dados
+xnew <- data.frame(Glabela = c(4.87, 5.00, 5.09, 5.22),
+                   Sexo = c("Feminino", "Masculino", "Feminino", "Masculino"),
+                   Grupo = c("7 a 11 anos", "7 a 11 anos", "12 a 18 anos", "12 a 18 anos")) 
+predict(modelo1, xnew, interval="confidence", level = 0.95)
+
+# Teste para falta de ajuste
+library(EnvStats)
+anovaPE(modelo1)
+
+
+
+
+
+
+# TRANSFORMAÇÃO log
+#qqplot - normalidade
+dados$tempo_log <-log(dados$tempo)
+
+modelo.anova2 <- lm(tempo_log ~ papel*clips, data = dados)
+fit2<-anova(modelo.anova2)
+
+dados$residuos.2 <- residuals(modelo.anova2)
+dados %>% ggplot(aes(sample = residuos.2)) + 
+  stat_qq(color = "blue") + 
+  stat_qq_line(color = "red") + 
+  labs(x = "Quantis teóricos", y = "Quantis amostrais") +
+  theme_bw()
+
+
+
+# ANOVA NAO PARAMÉTRICA
+# Transformação em postos
+
+aov.rnk <- aov(rank(tempo) ~ papel*clips, data = dados, 
+               contrasts = list(papel = 'contr.sum', clips = 'contr.sum'))
+
+summary(aov.rnk, type = 'III')
+
+# ou: (tanto faz)
+aov.rnk.2 <- lm(rank(tempo) ~ papel*clips, data = dados, 
+                contrasts = list(papel = 'contr.sum', clips = 'contr.sum'))
+
+fit3<-anova(aov.rnk.2)
+fit3
+
+# Resíduos
+#qqplot - normalidade
+dados$res.np <- residuals(aov.rnk.2)
+dados %>% ggplot(aes(sample = res.np)) + 
+  stat_qq(color = "blue") + 
+  stat_qq_line(color = "red") + 
+  labs(x = "Quantis teóricos", y = "Quantis amostrais") +
+  theme_bw()
+
+dados$res_padronizados_np <- dados$res.np/sqrt(fit3$`Mean Sq`[4])
+dados %>% ggplot(aes(sample = res_padronizados_np)) + 
+  stat_qq(color = "blue") + 
+  stat_qq_line(color = "red") + 
+  theme_bw()
+
+#residuos padronizados versus niveis fator A
+dados %>% select(c(papel, res_padronizados_np)) %>% ggplot(aes(x = papel, y = res_padronizados_np, color = papel)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Tipo de papel", y = "Resíduos padronizados") +
+  theme_bw()
+
+#residuos padronizados versus niveis fator B
+dados %>% select(c(clips, res_padronizados_np)) %>% ggplot(aes(x = clips, y = res_padronizados_np, color = clips)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Presença/ Ausência de clipe", y = "Resíduos padronizados") +
+  theme_bw()
+
+
+# POS-TESTE
+TukeyHSD(aov.rnk)
+plot(TukeyHSD(aov.rnk), las=1, col="red", cex.axis=0.2) 
+
+
+
+
+
+
+
+
+
+
 
